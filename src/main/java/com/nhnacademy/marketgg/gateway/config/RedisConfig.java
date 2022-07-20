@@ -20,6 +20,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 @Configuration
 public class RedisConfig {
 
+    private static final int REDIS_DURATION_SECOND = 5;
+
     @Value("${redis.host}")
     private String host;
 
@@ -77,7 +79,8 @@ public class RedisConfig {
                                                           .uri(passwordUrl)
                                                           .retrieve()
                                                           .bodyToMono(Map.class)
-                                                          .timeout(Duration.ofSeconds(5))
+                                                          .timeout(Duration.ofSeconds(
+                                                              REDIS_DURATION_SECOND))
                                                           .block();
 
         return Optional.ofNullable(block)

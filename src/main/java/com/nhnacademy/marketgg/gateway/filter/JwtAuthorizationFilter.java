@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * JWT 토큰을 이용한 인증을 해주는 필터입니다.
+ *
+ * @see <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/WWW-Authenticate">WWW-Authenticate</a>
  */
 @Slf4j
 @Component
@@ -23,27 +25,25 @@ public class JwtAuthorizationFilter
     private static final int HEADER_BEARER = 7;
 
     private final Key key;
-    private final String refreshRequestUrl;
     private final RedisTemplate<String, Object> redisTemplate;
 
-    /**영
+    /**
      * 생성자입니다.
      *
-     * @param jwtSecretUrl    - Secure Manager 에서 JWt Secret Key 를 요청하는 URL 입니다.
-     * @param refreshTokenUrl - 만료된 토큰에 대해 갱신을 요청할 수 있는 URL 입니다.
-     * @param redisTemplate   - 스프링 빈에 등록된 RedisTemplate 을 주입받습니다.
+     * @param jwtSecretUrl  - Secure Manager 에서 JWt Secret Key 를 요청하는 URL 입니다.
+     * @param redisTemplate - 스프링 빈에 등록된 RedisTemplate 을 주입받습니다.
      */
     public JwtAuthorizationFilter(@Value("${jwt.secret-url}") String jwtSecretUrl,
-                                  @Value("${jwt.refresh-request}") String refreshTokenUrl,
                                   RedisTemplate<String, Object> redisTemplate) {
         super(Config.class);
         this.key = JwtUtils.getKey(jwtSecretUrl);
-        this.refreshRequestUrl = refreshTokenUrl;
         this.redisTemplate = redisTemplate;
     }
 
+
     @Override
     public GatewayFilter apply(Config config) {
+
         return (exchange, chain) -> {
             HttpHeaders headers = exchange.getRequest().getHeaders();
 
@@ -57,23 +57,24 @@ public class JwtAuthorizationFilter
             String jwt = authorizationHeader.substring(HEADER_BEARER);
 
             if (Objects.nonNull(redisTemplate.opsForValue().get(jwt))) {
-                log.info("로그아웃 됨");
+                log.info("로그아웃된 사용자");
                 return chain.filter(exchange);
             }
 
-            Optional<String> token =
-                Optional.ofNullable(JwtUtils.parseToken(jwt, key, refreshRequestUrl));
+            Optional<String> token
+                = Optional.ofNullable(JwtUtils.parseToken(jwt, key));
 
             if (token.isEmpty()) {
                 return chain.filter(exchange);
             }
 
-            HttpHeaders requestHeader = exchange.getRequest().getHeaders();
+            log.info("JWT = {}", jwt);
 
-            requestHeader.setBearerAuth(token.get());
-
-            requestHeader.set("USER-EMAIL", JwtUtils.getEmail(jwt, key));
-            requestHeader.set("WWW-Authenticate", JwtUtils.getRoles(jwt, key));
+            exchange.getRequest()
+                    .mutate()
+                    .header("AUTH-ID", JwtUtils.getUuid(jwt, key))
+                    .header("WWW-Authenticate", JwtUtils.getRoles(jwt, key))
+                    .build();
 
             return chain.filter(exchange);
         };

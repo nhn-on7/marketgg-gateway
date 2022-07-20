@@ -1,5 +1,6 @@
 package com.nhnacademy.marketgg.gateway.jwt;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
@@ -7,6 +8,7 @@ import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.UnsupportedJwtException;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import java.io.IOException;
 import java.security.Key;
 import java.time.Duration;
 import java.util.List;
@@ -58,10 +60,9 @@ public class JwtUtils {
      *
      * @param token - 사용자의 JWT 입니다.
      * @param key - 토큰 파싱에 필요한 Key 입니다.
-     * @param refreshRequestUrl Refresh Token 을 요청할 수 있는 URL 입니다.
      * @return 사용가능한 JWT 를 반환합니다.
      */
-    public static String parseToken(String token, Key key, String refreshRequestUrl) {
+    public static String parseToken(String token, Key key) {
         try {
             Jwts.parserBuilder()
                 .setSigningKey(key)
@@ -73,38 +74,12 @@ public class JwtUtils {
             log.error("잘못된 JWT 서명입니다.", e);
         } catch (ExpiredJwtException e) {
             log.error("만료된 JWT 토큰입니다.", e);
-            return requestRenewToken(token, refreshRequestUrl);
         } catch (UnsupportedJwtException e) {
             log.error("지원되지 않는 JWT 토큰입니다.", e);
         } catch (IllegalArgumentException e) {
             log.error("JWT 토큰이 잘못되었습니다.", e);
         }
         return null;
-    }
-
-    private static String requestRenewToken(String jwt, String refreshRequestUrl) {
-        return Optional.ofNullable(
-                           Objects.requireNonNull(
-                                      WebClient.create(refreshRequestUrl)
-                                               .get()
-                                               .headers(httpHeaders ->
-                                                   httpHeaders.setBearerAuth(jwt))
-                                               .exchangeToMono(r -> r.toEntity(Void.class))
-                                               .block())
-                                  .getHeaders()
-                                  .get(HttpHeaders.AUTHORIZATION))
-                       .map(h -> h.get(0).substring(7))
-                       .orElse(null);
-    }
-
-    /**
-     * 토큰을 이용하여 사용자의 Email 정보를 얻습니다.
-     *
-     * @param token - JWT
-     * @return 사용자의 이메일
-     */
-    public static String getEmail(String token, Key key) {
-        return getClaims(token, key).getSubject();
     }
 
     /**
@@ -115,12 +90,20 @@ public class JwtUtils {
      * @return 사용자의 권한을 반환합니다.
      */
     public static String getRoles(String token, Key key) {
-        StringBuilder sb = new StringBuilder();
-        for (String role : (List<String>) getClaims(token, key).get(AUTHORITIES)) {
-            sb.append(role).append(",");
+        String roles = "";
+        ObjectMapper mapper = new ObjectMapper();
+
+        try {
+            roles = mapper.writeValueAsString(getClaims(token, key).get(AUTHORITIES));
+        } catch (IOException e) {
+            log.error("JSON ERROR", e);
         }
 
-        return sb.substring(0, sb.toString().length() - 1);
+        return roles;
+    }
+
+    public static String getUuid(String token, Key key) {
+        return getClaims(token, key).getSubject();
     }
 
     private static Claims getClaims(String token, Key key) {
